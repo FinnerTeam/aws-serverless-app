@@ -2,81 +2,26 @@ import { useEffect, useState } from "react";
 import "cross-fetch/polyfill";
 import {
   CognitoUserPool,
-  CognitoUserAttribute,
+  CognitoUserSession,
+  CognitoIdToken,
 } from "amazon-cognito-identity-js";
+import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
+
+//Comps
+import { SignUp } from "./pages/SignUp";
+import { Login } from "./pages/Login";
+import { Validation } from "./pages/Validation";
+import { CompareYourSelf } from "./pages/CompareYourSelf";
 
 //Mui
-import TextField from "@mui/material/TextField";
 import Grid from "@mui/material/Grid";
-import Button from "@mui/material/Button";
-import Typography from "@mui/material/Typography";
-
-const styles = {
-  item: {
-    mt: 2,
-  },
-};
-
-type signUpFormKeyType = "password" | "email" | "userName";
 
 const App = () => {
-  const [signUpForm, setSignUpForm] = useState({
-    email: "",
-    password: "",
-    userName: "",
-  });
-
-  const [signUpRequest, setSignUpRequest] = useState({
-    isLoading: false,
-    isError: false,
-    message: "",
-  });
+  const navigate = useNavigate();
 
   const [userPool, setUserPool] = useState<CognitoUserPool>();
-
-  const signUpFormHandler = ({
-    key,
-    value,
-  }: {
-    key: signUpFormKeyType;
-    value: string;
-  }) => {
-    setSignUpForm((prevState) => ({ ...prevState, [key]: value }));
-  };
-
-  const signUpWithCognito = () => {
-    setSignUpRequest({ isLoading: true, isError: false, message: "" });
-    const newUserData = {
-      Name: "email",
-      Value: signUpForm.email,
-    };
-    const attrList: CognitoUserAttribute[] = [];
-
-    attrList.push(new CognitoUserAttribute(newUserData));
-
-    userPool?.signUp(
-      signUpForm.userName,
-      signUpForm.password,
-      attrList,
-      [],
-      (err, result) => {
-        if (err) {
-          setSignUpRequest({
-            isLoading: false,
-            isError: true,
-            message: err.message,
-          });
-        } else {
-          setSignUpRequest({
-            isLoading: false,
-            isError: false,
-            message: `${signUpForm.userName} has been created successfully.`,
-          });
-        }
-      }
-    );
-  };
-
+  const [idToken, setIdToken] = useState<CognitoIdToken>();
+  const [accessToken, setAccessToken] = useState<CognitoIdToken>();
   useEffect(() => {
     const POOL_DATA = {
       UserPoolId: "us-east-2_rwnGVVDP3",
@@ -85,58 +30,47 @@ const App = () => {
 
     const userPool = new CognitoUserPool(POOL_DATA);
     setUserPool(userPool);
-  }, []);
+    const user = userPool.getCurrentUser();
+    if (user) {
+      user.getSession((err: Error, session: CognitoUserSession | null) => {
+        if (err) {
+          return;
+        } else if (session && session.isValid()) {
+          setIdToken(session.getIdToken());
+          setAccessToken(session.getAccessToken());
+          navigate("/compare-your-self");
+        }
+      });
+    }
+  }, [navigate]);
 
   return (
     <Grid container direction="column" alignItems="center">
-      <h1>Sign Up</h1>
-      <TextField
-        label="User name"
-        variant="outlined"
-        sx={styles.item}
-        onChange={(e) =>
-          signUpFormHandler({ key: "userName", value: e?.target?.value })
-        }
-      />
-      <TextField
-        label="Email"
-        variant="outlined"
-        sx={styles.item}
-        onChange={(e) =>
-          signUpFormHandler({ key: "email", value: e?.target?.value })
-        }
-      />
-      <TextField
-        label="Password"
-        type="password"
-        variant="outlined"
-        sx={styles.item}
-        onChange={(e) =>
-          signUpFormHandler({ key: "password", value: e?.target?.value })
-        }
-      />
-      <Button
-        variant="contained"
-        sx={styles.item}
-        onClick={signUpWithCognito}
-        disabled={
-          signUpForm.userName.length === 0 ||
-          signUpForm.email.length === 0 ||
-          signUpForm.password.length === 0
-        }
-      >
-        {signUpRequest.isLoading ? "Loading" : "Sign Up"}
-      </Button>
-      {signUpRequest.isError && signUpRequest.message.length > 0 && (
-        <Typography sx={{ ...styles.item, color: "error.main" }}>
-          {signUpRequest.message}
-        </Typography>
-      )}
-      {!signUpRequest.isError && signUpRequest.message.length > 0 && (
-        <Typography sx={{ ...styles.item, color: "success.main" }}>
-          {signUpRequest.message}
-        </Typography>
-      )}
+      <Routes>
+        {userPool && (
+          <>
+            <Route path="/sign-up" element={<SignUp userPool={userPool} />} />
+            {idToken && accessToken && (
+              <Route
+                path="/compare-your-self"
+                element={
+                  <CompareYourSelf
+                    idToken={idToken}
+                    accessToken={accessToken}
+                  />
+                }
+              />
+            )}
+
+            <Route
+              path="/validation"
+              element={<Validation userPool={userPool} />}
+            />
+            <Route path="login" element={<Login userPool={userPool} />} />
+            <Route path="*" element={<Navigate replace to="/sign-up" />} />
+          </>
+        )}
+      </Routes>
     </Grid>
   );
 };
